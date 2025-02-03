@@ -91,6 +91,7 @@ const consumer2 = kafka.consumer({
     `[Kafka Consumer1] ${consumerId} is up and running for Partition: ${"test1"}`
   );
 })();
+
 (async () => {
   await consumer2.connect();
   await consumer2.subscribe({
