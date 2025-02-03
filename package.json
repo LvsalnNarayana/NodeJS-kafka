@@ -4,16 +4,15 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node app.js",
-    "producer_dev": "nodemon producer.js",
-    "consumer_dev": "nodemon consumer.js",
-    "dev": "concurrently \"npm run producer_dev\" \"npm run consumer_dev\""
+    "producer_dev": "nodemon ./producer.js",
+    "consumer_dev": "nodemon ./consumer.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "artillery": "^2.0.21",
     "dotenv": "^16.4.7",
     "express": "^4.21.1",
     "kafkajs": "^2.2.4"

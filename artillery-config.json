@@ -1,0 +1,26 @@
+{
+    "config": {
+        "target": "http://localhost:3001",
+        "phases": [
+            {
+                "duration": 10,
+                "arrivalRate": 1000
+            }
+        ]
+    },
+    "scenarios": [
+        {
+            "flow": [
+                {
+                    "post": {
+                        "url": "/send",
+                        "json": {
+                            "message": "Hello Kafka",
+                            "partition": 0
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

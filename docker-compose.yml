@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     image: postgres:14-alpine
@@ -9,7 +7,11 @@ services:
     ports:
       - "4242:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -h localhost -p 5432"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER} -h nodejs_kafka_db -p 5432",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -30,29 +32,102 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo ruok | nc localhost 2181 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - nodejs_kafka_network
 
-  kafka:
+  kafka1:
     image: confluentinc/cp-kafka:latest
-    container_name: nodejs_kafka
+    container_name: nodejs_kafka_1
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ZOOKEEPER_CONNECT: nodejs_zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://nodejs_kafka_1:9092
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
     ports:
       - "9092:9092"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          "kafka-broker-api-versions --bootstrap-server localhost:9092",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - nodejs_kafka_network
 
-  app:
+  kafka2:
+    image: confluentinc/cp-kafka:latest
+    container_name: nodejs_kafka_2
+    depends_on:
+      kafka1:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: nodejs_zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://nodejs_kafka_2:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    ports:
+      - "9093:9093"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          "kafka-broker-api-versions --bootstrap-server localhost:9093",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nodejs_kafka_network
+
+  kafka3:
+    image: confluentinc/cp-kafka:latest
+    container_name: nodejs_kafka_3
+    depends_on:
+      kafka2:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: nodejs_zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://nodejs_kafka_3:9094
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9094
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    ports:
+      - "9094:9094"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          "kafka-broker-api-versions --bootstrap-server localhost:9094",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nodejs_kafka_network
+
+  producer:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: producer.Dockerfile
     container_name: nodejs_kafka_producer
     env_file:
       - .env
@@ -61,12 +136,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      kafka:
-        condition: service_started
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
     volumes:
-      - .:/user/src/app:delegated
-      - kafka_app_node_modules:/user/src/app/node_modules
-    command: npm run dev
+      - ./producer.js:/usr/src/app/producer.js
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     restart: always
     networks:
       - nodejs_kafka_network
@@ -77,20 +159,27 @@ services:
       dockerfile: consumer.Dockerfile
     container_name: nodejs_kafka_consumer
     env_file:
-      -.env
+      - .env
     ports:
-      - "3001:3001"
+      - "3002:3002"
     depends_on:
       postgres:
         condition: service_healthy
-      kafka:
-        condition: service_started
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
+      producer:
+        condition: service_healthy
     volumes:
-      - ./consumer.js:/user/src/app/consumer
-    command: npm run dev
+      - ./consumer.js:/usr/src/app/consumer.js
+    networks:
+      - nodejs_kafka_network
+
 volumes:
   postgres_kafka_data:
-  kafka_app_node_modules:
 
 networks:
   nodejs_kafka_network:

@@ -2,7 +2,7 @@
 FROM node:18-alpine
 
 # Set the working directory inside the container
-WORKDIR /user/src/app
+WORKDIR /usr/src/app
 
 # Copy package.json and package-lock.json
 COPY package*.json ./
@@ -11,10 +11,10 @@ COPY package*.json ./
 RUN npm install
 
 # Copy the rest of the application code
-COPY . .
+COPY ./consumer.js .
 
 # Expose the port your app will listen on
-EXPOSE 3001
+EXPOSE 3002
 
 # Set the default command to run the app in development mode
-CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "consumer_dev"]

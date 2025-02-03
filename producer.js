@@ -1,33 +1,65 @@
 import "dotenv/config";
 import express from "express";
-import { Kafka, CompressionTypes, logLevel } from "kafkajs";
+import { Kafka, logLevel, Partitioners } from "kafkajs";
+import { Worker } from "worker_threads";
 
 const app = express();
-const port = process.env.PRODUCER_PORT;
 app.use(express.json());
 
 const kafka = new Kafka({
-  clientId: process.env.KAFKA_CLIENT_ID,
-  brokers: ["localhost:9092"],
+  clientId: "node-kafka-client",
+  brokers: [
+    "nodejs_kafka_1:9092",
+    "nodejs_kafka_2:9093",
+    "nodejs_kafka_3:9094",
+  ],
   logLevel: logLevel.INFO,
 });
+const topic = "test-topic";
+const producer = kafka.producer({
+  allowAutoTopicCreation: true,
+  createPartitioner: Partitioners.LegacyPartitioner,
+});
+const admin = kafka.admin();
+const createTopicWithPartitions = async () => {
+  try {
+    await admin.connect();
+    const existingTopics = await admin.listTopics();
 
-const topic = process.env.KAFKA_TOPIC;
-const producer = kafka.producer();
+    if (!existingTopics.includes(topic)) {
+      console.log(`[Kafka Admin] Topic "${topic}" does not exist, creating...`);
+      await admin.createTopics({
+        topics: [
+          {
+            topic,
+            numPartitions: 3,
+            replicationFactor: 3,
+          },
+        ],
+      });
+      console.log(`[Kafka Admin] Topic "${topic}" created with 3 partitions.`);
+    } else {
+      console.log(`[Kafka Admin] Topic "${topic}" already exists.`);
+    }
+  } catch (error) {
+    console.error(`[Kafka Admin] Error creating topic: ${error.message}`);
+  } finally {
+    await admin.disconnect();
+  }
+};
 
-const getRandomNumber = () => Math.round(Math.random() * 1000);
-
-const sendMessage = async (userMessage) => {
+const sendMessage = async ({ message, partition }) => {
   try {
     await producer.send({
       topic,
-      compression: CompressionTypes.GZIP,
       messages: [
         {
-          key: userMessage?.key || `key-${getRandomNumber()}`,
-          value: userMessage?.message || "hello from server",
+          // partition,
+          // key: "test-2",
+          value: message.toString(),
         },
       ],
+      acks: -1,
     });
   } catch (e) {
     console.error(`[Kafka Producer] Error sending messages: ${e.message}`, e);
@@ -57,24 +89,51 @@ signalTraps.forEach((type) => {
   });
 });
 
+const startWorker = () => {
+  const worker = new Worker("./loadTestWorker.js");
+  worker.postMessage("startLoadTest");
+  worker.on("message", (msg) => console.log("[Main] Worker Response:", msg));
+  worker.on("error", (err) => console.error("[Main] Worker Error:", err));
+  worker.on("exit", (code) =>
+    console.log(`[Main] Worker exited with code ${code}`)
+  );
+};
+
 app.get("/", (req, res) => {
   res.json({
     message: "Welcome to the Kafka Producer!",
   });
 });
 
+app.post("/start-test", async (req, res) => {
+  try {
+    console.log("[Main] Received request to start load test.");
+
+    startWorker();
+
+    res.json({ message: "Load test started successfully!" });
+  } catch (error) {
+    console.error("[Main] Error starting load test:", error);
+    res.status(500).json({ error: "Failed to start load test" });
+  }
+});
+
 app.post("/send", async (req, res) => {
   try {
+    console.log("Request Received");
     await producer.connect();
     await sendMessage({
       message: req.body.message,
+      partition: req.body.partition,
     });
+    await producer.disconnect();
     res.send("Message sent to Kafka!");
   } catch (e) {
     res.status(500).send(`Failed to send message: ${e.message}`);
   }
 });
 
-app.listen(port, async () => {
-  console.log(`[Express Server] Listening on port ${port}`);
+app.listen(3001, async () => {
+  console.log(`[Express Server] Listening on port ${3001}`);
+  await createTopicWithPartitions();
 });
